@@ -5,12 +5,15 @@ import logging
 # import line_profiler
 
 import numpy as np
+import cupy
 
 logger = logging.getLogger('spectrum_logger')
 
 try:
-    import scipy
-    from scipy import fftpack
+    #import scipy
+    #from scipy import fftpack
+    import scipy.fft
+    import cupyx.scipy.fft as cp_fft
 except ImportError:
     fftpack = None
     logger.info("No scipy support in environment")
@@ -38,6 +41,7 @@ def test_numpy_fft_speed(fft_size: int, iterations: int = 500) -> float:
     time_process_start = time.perf_counter()
     for test in range(iterations):
         _ = np.fft.fft(complex_data)
+    time.sleep(0.5)
     time_process_end = time.perf_counter()
     return (1e6 * (time_process_end - time_process_start)) / iterations
 
@@ -55,11 +59,12 @@ def test_fftw_fft_speed(fft_size: int, iterations: int = 500, fftw_threads: int 
 
 
 def test_scipy_fft_speed(fft_size: int, iterations: int = 500) -> float:
-    if fftpack:
+    if scipy.fft:
         complex_data = create_test_data(fft_size)
         time_process_start = time.perf_counter()
-        for test in range(iterations):
-            _ = fftpack.fft(complex_data)
+        with scipy.fft.set_backend(cp_fft):
+            for test in range(iterations):
+                _ = scipy.fft.fft(cupy.asnumpy(complex_data))
         time_process_end = time.perf_counter()
         return (1e6 * (time_process_end - time_process_start)) / iterations
     return 1e6  # something very big in useconds
@@ -192,7 +197,11 @@ class Spectrum:
 
         # normalisation by dividing by fft size not done here, faster elsewhere
         if self._use_scipy_fft:
-            signals_fft = fftpack.fft(complex_samples * self._win)
+            print('hello GPU!')
+            scipy.fft.set_backend(cp_fft)
+            #with scipy.fft.set_backend(cp_fft):
+            #    signal_fft = scipy.fft.fft(cupy.asnumpy(complex_samples) * self._win)
+            signals_fft = scipy.fft.fft(complex_samples * self._win)
         elif self._use_fftw_fft:
             kwargs = {'threads': self._fftw_threads}
             signals_fft = pyfftw.interfaces.numpy_fft.fft(complex_samples * self._win, **kwargs)
